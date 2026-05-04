@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PH SISTEMAS - Calculadora Profissional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body { background-color: #f3f4f6; }
+        .card { background: white; border-radius: 8px; border: 1px solid #e5e7eb; padding: 20px; margin-bottom: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="text-slate-800 font-sans">
+
+    <!-- LOGIN -->
+    <div id="loginPage" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded shadow-xl w-full max-w-md border-t-8 border-blue-700">
+            <h1 class="text-2xl font-black text-center text-blue-900 mb-6 italic">PH SISTEMAS</h1>
+            <input type="text" id="nomeEmpresa" class="w-full border p-3 rounded mb-4 font-bold" placeholder="Nome da Empresa">
+            <input type="email" id="email" class="w-full border p-3 rounded mb-4" placeholder="E-mail">
+            <input type="password" id="password" class="w-full border p-3 rounded mb-6" placeholder="Senha">
+            <button onclick="fazerLogin()" class="w-full bg-blue-700 text-white font-bold py-3 rounded">ACESSAR SISTEMA</button>
+        </div>
+    </div>
+
+    <!-- TELA PRINCIPAL -->
+    <div id="mainPage" class="hidden max-w-5xl mx-auto p-4">
+        <div class="flex justify-between items-center mb-6 bg-white p-6 rounded shadow-sm border-b-4 border-blue-700">
+            <h2 id="displayEmpresa" class="text-xl font-black text-blue-900 uppercase italic"></h2>
+            <button onclick="logout()" class="text-red-600 font-bold uppercase text-xs">Sair / Trocar Conta</button>
+        </div>
+
+        <!-- TABELA DE PREÇOS COM PERSISTÊNCIA -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xs font-black text-slate-400 uppercase">Tabela de Preços (Salva Automaticamente)</h3>
+                <span class="text-[10px] text-green-600 font-bold uppercase">● Valores Sincronizados</span>
+            </div>
+            <div id="gridPrecos" class="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2"></div>
+        </div>
+
+        <!-- CONTROLES -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <button onclick="adicionarItem('ESQUELETO')" class="bg-slate-800 text-white py-4 rounded font-black hover:bg-slate-700 uppercase tracking-tighter text-sm">+ Esqueleto Variável</button>
+            <button onclick="adicionarItem('RADIER')" class="bg-slate-800 text-white py-4 rounded font-black hover:bg-slate-700 uppercase tracking-tighter text-sm">+ Radier Sob Medida</button>
+        </div>
+
+        <div id="containerItens"></div>
+
+        <!-- RESULTADO -->
+        <div class="mt-10 bg-slate-900 p-8 rounded-xl shadow-2xl text-white text-center">
+            <div class="flex justify-around mb-4 border-b border-slate-700 pb-4">
+                <div><p class="text-[10px] text-slate-400">PESO TOTAL</p><p id="pesoTotalFinal" class="text-xl font-bold">0.00 Kg</p></div>
+                <div><p class="text-[10px] text-slate-400">MARGEM APLICADA</p><p id="margemAplicada" class="text-xl font-bold text-blue-400">20%</p></div>
+            </div>
+            <h2 id="totalFinal" class="text-5xl font-black text-green-400">R$ 0,00</h2>
+            <button onclick="gerarPDF()" class="mt-6 w-full bg-blue-600 py-4 rounded font-black text-xl uppercase shadow-lg">Gerar Orçamento Técnico</button>
+        </div>
+    </div>
+
+    <script>
+        // Configurações mantidas conforme solicitado
+        const BASEROW_TOKEN = 'KFB2YupQfqQZj6kFDwO6NKaje07vd6DP';
+        const TABLE_ID = '1901';
+        const AXIOMAS = {
+            "3.4": 0.071, "4.2": 0.109, "5.0": 0.154, "6.3": 0.245, "8.0": 0.395, 
+            "10.0": 0.617, "12.5": 0.963, "16.0": 1.578, "20.0": 2.466, "25.0": 3.853
+        };
+
+        // Salva preços localmente para persistência
+        function salvarPrecoLocal(bitola, valor) {
+            let precosSalvos = JSON.parse(localStorage.getItem('precos_ph_sistemas')) || {};
+            precosSalvos[bitola] = valor;
+            localStorage.setItem('precos_ph_sistemas', JSON.stringify(precosSalvos));
+            calcularTudo();
+        }
+
+        function iniciarPrecos() {
+            const grid = document.getElementById('gridPrecos');
+            const salvos = JSON.parse(localStorage.getItem('precos_ph_sistemas')) || {};
+            
+            grid.innerHTML = Object.keys(AXIOMAS).map(b => {
+                const valor = salvos[b] || "8.50";
+                return `
+                <div class="bg-slate-50 p-2 rounded border border-slate-100">
+                    <label class="block text-[9px] font-black text-slate-400">${b}mm</label>
+                    <input type="number" id="p-${b}" value="${valor}" 
+                        oninput="salvarPrecoLocal('${b}', this.value)" 
+                        class="w-full bg-transparent font-black text-blue-700 outline-none text-sm">
+                </div>`;
+            }).join('');
+        }
+
+        window.onload = () => {
+            const empresaSalva = localStorage.getItem('empresa_ph_sistemas');
+            if(empresaSalva) document.getElementById('nomeEmpresa').value = empresaSalva;
+        };
+
+        async function fazerLogin() {
+            const email = document.getElementById('email').value.trim();
+            const senha = document.getElementById('password').value;
+            const empresa = document.getElementById('nomeEmpresa').value.trim();
+            if(!empresa) return alert("Informe o nome da empresa!");
+
+            try {
+                // Requisição ao servidor Baserow mantida
+                const response = await fetch(`http://213.199.56.115/api/database/rows/table/${TABLE_ID}/?user_field_names=true`, {
+                    headers: { 'Authorization': `Token ${BASEROW_TOKEN}` }
+                });
+                const data = await response.json();
+                if(data.results.find(u => (u.Email || u.email) === email && (u.Senha || u.senha) === senha)) {
+                    localStorage.setItem('empresa_ph_sistemas', empresa);
+                    document.getElementById('displayEmpresa').innerText = empresa;
+                    document.getElementById('loginPage').classList.add('hidden');
+                    document.getElementById('mainPage').classList.remove('hidden');
+                    iniciarPrecos();
+                } else { alert("Acesso negado."); }
+            } catch (e) { alert("Erro ao conectar no servidor."); }
+        }
+
+        function adicionarItem(tipo) {
+            const id = Date.now();
+            let html = "";
+            if(tipo === 'ESQUELETO') {
+                html = `
+                <div id="item-${id}" data-tipo="ESQUELETO" class="card border-l-[12px] border-blue-700 relative item-calc shadow-md">
+                    <button onclick="this.parentElement.remove(); calcularTudo()" class="absolute top-2 right-2 text-red-500 font-bold bg-red-50 w-6 h-6 rounded-full">×</button>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Qtd Peças</label><input type="number" value="1" class="qtdP w-full border p-2 rounded-lg font-black bg-slate-50" oninput="calcularTudo()"></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Comp. Total (mt)</label><input type="number" value="3" class="compE w-full border p-2 rounded-lg font-black" oninput="calcularTudo()"></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Dobra Estribo (cm)</label>
+                             <div class="flex gap-1"><input type="number" value="7" class="estA w-full border p-1 rounded font-bold"><input type="number" value="17" class="estB w-full border p-1 rounded font-bold"></div></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Estribo Ferro/Espaç.</label>
+                             <div class="flex gap-1">
+                                <select class="bitE border p-1 rounded text-xs font-black bg-blue-50">${Object.keys(AXIOMAS).map(b=>`<option value="${b}" ${b=="4.2"?"selected":""}>${b}mm</option>`).join('')}</select>
+                                <input type="number" value="20" class="distE border p-1 rounded w-16 font-bold" oninput="calcularTudo()">
+                             </div></div>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300">
+                        <p class="text-[10px] font-black mb-2 text-blue-700 uppercase italic">Armação Longitudinal</p>
+                        <div id="longs-${id}" class="space-y-2">
+                            <div class="flex gap-2 barra-long">
+                                <input type="number" value="4" class="bQtd border p-2 rounded-lg w-20 font-black text-center" oninput="calcularTudo()">
+                                <select class="bBit border p-2 rounded-lg flex-1 font-black" onchange="calcularTudo()">
+                                    ${Object.keys(AXIOMAS).map(b=>`<option value="${b}" ${b=="10.0"?"selected":""}>${b}mm</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="addBarraLong(${id})" class="mt-3 text-[11px] font-black text-blue-700 uppercase">+ Misturar Bitola (Ferro Diferente)</button>
+                    </div>
+                </div>`;
+            } else {
+                html = `
+                <div id="item-${id}" data-tipo="RADIER" class="card border-l-[12px] border-orange-500 relative item-calc shadow-md">
+                    <button onclick="this.parentElement.remove(); calcularTudo()" class="absolute top-2 right-2 text-red-500 font-bold bg-red-50 w-6 h-6 rounded-full">×</button>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Qtd de Radiers</label><input type="number" value="1" class="rQtdP w-full border p-2 rounded-lg font-black bg-slate-50" oninput="calcularTudo()"></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Medida (AxB)</label><div class="flex gap-1"><input type="number" value="0.50" class="rA border p-2 rounded w-full font-bold"><input type="number" value="0.50" class="rB border p-2 rounded w-full font-bold"></div></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Ferros/Bitola</label><div class="flex gap-1"><input type="number" value="8" class="rFerros border p-2 rounded w-16 font-bold"><select class="rBit border p-2 rounded flex-1 font-bold">${Object.keys(AXIOMAS).map(b=>`<option value="${b}" ${b=="10.0"?"selected":""}>${b}mm</option>`).join('')}</select></div></div>
+                        <div><label class="text-[10px] font-black uppercase text-slate-400">Gancho/Virada (cm)</label><input type="number" value="10" class="rVir border p-2 rounded w-full font-bold" oninput="calcularTudo()"></div>
+                    </div>
+                </div>`;
+            }
+            document.getElementById('containerItens').insertAdjacentHTML('afterbegin', html);
+            calcularTudo();
+        }
+
+        function addBarraLong(id) {
+            const container = document.getElementById(`longs-${id}`);
+            const novaBarra = container.children[0].cloneNode(true);
+            container.appendChild(novaBarra);
+            calcularTudo();
+        }
+
+        function calcularTudo() {
+            let totalGeral = 0;
+            let totalPesoGeral = 0;
+
+            document.querySelectorAll('.item-calc').forEach(item => {
+                if(item.dataset.tipo === 'ESQUELETO') {
+                    const pecas = parseFloat(item.querySelector('.qtdP').value) || 0;
+                    const comp = parseFloat(item.querySelector('.compE').value) || 0;
+                    let custoItem = 0;
+                    let pesoItem = 0;
+
+                    item.querySelectorAll('.barra-long').forEach(b => {
+                        const q = parseFloat(b.querySelector('.bQtd').value) || 0;
+                        const bit = b.querySelector('.bBit').value;
+                        const pesoLong = (q * comp * AXIOMAS[bit]);
+                        pesoItem += pesoLong;
+                        custoItem += pesoLong * parseFloat(document.getElementById(`p-${bit}`).value);
+                    });
+
+                    const bE = item.querySelector('.bitE').value;
+                    const dE = (parseFloat(item.querySelector('.distE').value) || 20) / 100;
+                    const perim = ((parseFloat(item.querySelector('.estA').value) + parseFloat(item.querySelector('.estB').value)) * 2 + 10) / 100;
+                    const pesoEst = perim * (Math.ceil(comp / dE) + 1) * AXIOMAS[bE];
+                    
+                    pesoItem += pesoEst;
+                    custoItem += pesoEst * parseFloat(document.getElementById(`p-${bE}`).value);
+                    
+                    totalPesoGeral += (pesoItem * pecas);
+                    totalGeral += (custoItem * pecas);
+                } else {
+                    const qP = parseFloat(item.querySelector('.rQtdP').value) || 0;
+                    const bit = item.querySelector('.rBit').value;
+                    const med = (parseFloat(item.querySelector('.rA').value) + (parseFloat(item.querySelector('.rVir').value)/100)*2) * parseFloat(item.querySelector('.rFerros').value);
+                    const med2 = (parseFloat(item.querySelector('.rB').value) + (parseFloat(item.querySelector('.rVir').value)/100)*2) * parseFloat(item.querySelector('.rFerros').value);
+                    const pesoR = (med + med2) * AXIOMAS[bit];
+                    
+                    totalPesoGeral += (pesoR * qP);
+                    totalGeral += pesoR * parseFloat(document.getElementById(`p-${bit}`).value) * qP;
+                }
+            });
+
+            const valorFinal = totalGeral * 1.20; 
+
+            document.getElementById('pesoTotalFinal').innerText = totalPesoGeral.toFixed(2) + " Kg";
+            document.getElementById('totalFinal').innerText = "R$ " + valorFinal.toLocaleString('pt-BR', {minimumFractionDigits: 2});
+        }
+
+        function logout() {
+            sessionStorage.clear();
+            location.reload();
+        }
+
+        function gerarPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const emp = document.getElementById('displayEmpresa').innerText;
+            
+            doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(30, 58, 138).text(emp, 105, 20, {align: "center"});
+            doc.setFontSize(10).setTextColor(100).text("RELATÓRIO TÉCNICO DE FERRAGEM ARMADA", 105, 28, {align: "center"});
+            
+            const logs = [];
+            document.querySelectorAll('.item-calc').forEach(item => {
+                if(item.dataset.tipo === 'ESQUELETO') {
+                    const pecas = item.querySelector('.qtdP').value.padStart(2, '0');
+                    const comp = item.querySelector('.compE').value;
+                    const dim = `${item.querySelector('.estA').value}x${item.querySelector('.estB').value}`;
+                    const dist = item.querySelector('.distE').value;
+                    const bitE = item.querySelector('.bitE').value;
+                    let descBarras = "";
+                    item.querySelectorAll('.barra-long').forEach(b => {
+                        descBarras += `${b.querySelector('.bQtd').value}F${b.querySelector('.bBit').value} `;
+                    });
+                    logs.push([`${pecas} COLUNA(S) DE ${comp}mt | DIM: ${dim} | FERROS: ${descBarras} | EST: ${bitE}mm AC ${dist}`]);
+                } else {
+                    const pecas = item.querySelector('.rQtdP').value.padStart(2, '0');
+                    const dim = `${item.querySelector('.rA').value}x${item.querySelector('.rB').value}`;
+                    const fers = item.querySelector('.rFerros').value;
+                    const bit = item.querySelector('.rBit').value;
+                    logs.push([`${pecas} RADIER(S) ${dim} | ${fers} FERROS DE ${bit}mm | C/ VIRADA`]);
+                }
+            });
+
+            doc.autoTable({ startY: 40, head: [['DETALHAMENTO TÉCNICO DOS ITENS']], body: logs, theme: 'grid', headStyles: {fillColor: [30, 58, 138]} });
+            doc.setFontSize(14).setTextColor(0).text(`PESO TOTAL DO AÇO: ${document.getElementById('pesoTotalFinal').innerText}`, 14, doc.lastAutoTable.finalY + 15);
+            doc.setFontSize(18).setTextColor(22, 101, 52).text(`VALOR TOTAL DO ORÇAMENTO: ${document.getElementById('totalFinal').innerText}`, 14, doc.lastAutoTable.finalY + 25);
+            
+            doc.save(`Orcamento_${emp}.pdf`);
+        }
+    </script>
+</body>
+</html>
