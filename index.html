@@ -63,8 +63,8 @@
 
     <script>
         // Configurações mantidas conforme solicitado
-        const BASEROW_TOKEN = 'KFB2YupQfqQZj6kFDwO6NKaje07vd6DP';
-        const TABLE_ID = '1901';
+        const BASEROW_TOKEN = '21WDS4cSz6izrJsEfUzRblsIdtj9DCF5';
+        const TABLE_ID = '959403';
         const AXIOMAS = {
             "3.4": 0.071, "4.2": 0.109, "5.0": 0.154, "6.3": 0.245, "8.0": 0.395, 
             "10.0": 0.617, "12.5": 0.963, "16.0": 1.578, "20.0": 2.466, "25.0": 3.853
@@ -107,7 +107,7 @@
 
             try {
                 // Requisição ao servidor Baserow mantida
-                const response = await fetch(`http://213.199.56.115/api/database/rows/table/${TABLE_ID}/?user_field_names=true`, {
+                const response = await fetch(`https://api.baserow.io/database/rows/table/${TABLE_ID}/?user_field_names=true`, {
                     headers: { 'Authorization': `Token ${BASEROW_TOKEN}` }
                 });
                 const data = await response.json();
